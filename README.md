@@ -6,7 +6,7 @@ a formatted Google Docs report to your inbox every morning.
 
 ## What it does
 
-Every weekday at 2:00 AM the pipeline:
+Every weekday at 1:00 AM the pipeline:
 
 1. Searches Gmail for yesterday's TLDR newsletters
 2. Extracts article links and metadata
@@ -41,7 +41,7 @@ Processing one article per trigger interval (default: 5 min) avoids
 Google Apps Script's 6-minute execution limit. State is persisted in
 Script Properties between executions.
 
-startPipeline() → runs once at 02:00, collects articles
+startPipeline() → runs once at 01:00, collects articles
 ↓
 runNextStep() → runs every 5 min, processes one article per call
 ↓
@@ -84,7 +84,7 @@ including AI summarization.
 ### 4. Activate the daily trigger
 
 Run `setupDailyTrigger()` once. The pipeline will start automatically
-every weekday at 02:00 in your script's timezone.
+every weekday at 01:00 in your script's timezone.
 
 ## Configuration
 
@@ -104,7 +104,7 @@ All settings are in the `CONFIG` object at the top of the script.
 
 | Function | Purpose |
 |---|---|
-| `setupDailyTrigger()` | Create or recreate the 03:00 daily trigger |
+| `setupDailyTrigger()` | Create or recreate the 01:00 daily trigger |
 | `testDriveOnly()` | Test Drive/Docs/Gmail without AI |
 | `testSingleArticle()` | Full end-to-end test on one article |
 | `showArticles()` | List all articles found in yesterday's emails |

@@ -36,7 +36,7 @@ rodziny TLDR.
 
 Cykl dzienny wygląda następująco:
 
-  - O godzinie 2:00 aplikacja przeszukuje Twoją skrzynkę Gmail w poszukiwaniu
+  - O godzinie 1:00 aplikacja przeszukuje Twoją skrzynkę Gmail w poszukiwaniu
     wczorajszych wydań newsletterów TLDR.
 
   - Wydobywa z nich listę artykułów wraz z metadanymi (tytuł, czas czytania,
@@ -232,13 +232,13 @@ KROK 6 — Aktywuj codzienny trigger
   1. W edytorze wybierz funkcję: setupDailyTrigger
   2. Kliknij "Uruchom".
   3. W logach powinno pojawić się:
-       Daily trigger set: startPipeline() at 03:00.
+       Daily trigger set: startPipeline() at 01:00.
 
 Weryfikacja:
   Kliknij ikonę zegara (Triggery) w lewym panelu. Powinieneś zobaczyć:
     Funkcja:       startPipeline
     Źródło:        Oparty na czasie
-    Typ:           Codziennie o godz. 3
+    Typ:           Codziennie o godz. 1
 
 Aplikacja jest teraz aktywna. Od tej chwili każdej nocy (wt–sb)
 o 3:00 automatycznie przetworzy wczorajsze newslettery.
@@ -603,7 +603,6 @@ Rozwiązanie: uruchom setupDailyTrigger().
   Interwał między artykułami    5 minut
   Max błędów z rzędu            5 przed raportem częściowym
   Max e-maili dziennie          100 (limit Google Apps Script)
-  Czas wykonania dla 30 art.    ~2,5 godziny
 
 Artykuły przetwarzane są TYLKO z poprzedniego dnia. Nie ma możliwości
 przetworzenia artykułów starszych niż jeden dzień bez modyfikacji kodu.

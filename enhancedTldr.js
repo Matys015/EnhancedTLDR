@@ -43,7 +43,7 @@ const CONFIG = {
 function setupDailyTrigger() {
   deleteTriggersByHandler('startPipeline');
   ScriptApp.newTrigger('startPipeline')
-    .timeBased().everyDays(1).atHour(3)
+    .timeBased().everyDays(1).atHour(1)
     .inTimezone(Session.getScriptTimeZone())
     .create();
   Logger.log('Daily trigger set: startPipeline() at 03:00.');
