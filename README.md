@@ -6,15 +6,18 @@ a formatted Google Docs report to your inbox every morning.
 
 ## What it does
 
-Every weekday at 1:00 AM the pipeline:
+Every weekday at midnight the pipeline:
 
 1. Searches Gmail for yesterday's TLDR newsletters
-2. Extracts article links and metadata
-3. Scrapes each article's content
-4. Sends the text to an LLM via OpenRouter API
-5. Compiles all summaries into a formatted Google Docs document
-6. Saves the document to Google Drive under `TLDR/YYYY/month/DD/`
-7. Sends you an email with a direct link to the report
+2. Extracts article links, metadata, and inline descriptions
+3. Deduplicates articles appearing across multiple newsletters
+4. Scrapes each article's content
+5. Sends the text to an LLM via OpenRouter API for summarization in Polish
+6. Falls back to translating the newsletter's inline description
+   when a page is inaccessible (paywall, JavaScript-only, 403)
+7. Compiles all results into a formatted Google Docs document
+8. Saves the document to Google Drive under `TLDR/YYYY/month/DD/`
+9. Sends you an email with a direct link to the report
 
 ## Supported newsletters
 
@@ -31,7 +34,7 @@ Every weekday at 1:00 AM the pipeline:
 | Type | Detected by | AI output |
 |---|---|---|
 | `article` | `(N minute read)`, up to 20 min | Full summary, 3–6 paragraphs |
-| `long_read` | `(N minute read)`, over 20 min | Short preview, 3–5 sentences |
+| `long_read` | `(N minute read)`, over 20 min | Short teaser, 3–5 sentences |
 | `github` | `(GitHub Repo)` | Project description: purpose, features, stack |
 | `website` | `(Website)` | Tool/service description: purpose, features, audience |
 
@@ -41,16 +44,37 @@ Processing one article per trigger interval (default: 5 min) avoids
 Google Apps Script's 6-minute execution limit. State is persisted in
 Script Properties between executions.
 
-startPipeline() → runs once at 01:00, collects articles
+startPipeline() — runs once at 00:00, collects and deduplicates articles
 ↓
-runNextStep() → runs every 5 min, processes one article per call
+runNextStep() — runs every 5 min, processes one article per call
 ↓
-finalizePipeline() → creates Google Doc, sends email, cleans up
+finalizePipeline() — creates Google Doc, sends email, cleans up
+
+
+### Fallback summarization
+
+If scraping a page fails, the pipeline checks whether the newsletter's
+inline description (snippet) was captured during parsing. If so, it sends
+that snippet to the LLM for translation into Polish instead of returning
+an error. The document marks such entries clearly so the source is transparent.
+
+### Retry logic
+
+Transient API errors (429, 503, etc.) trigger automatic re-queuing with
+exponential backoff. On the final attempt the pipeline switches to the
+configured backup model. After exhausting all attempts the article is
+recorded with an error message and processing continues.
+
+### Deduplication
+
+Articles covering the same topic across multiple newsletters are deduplicated
+using token-level similarity (Jaccard coefficient + containment ratio).
+Only the first occurrence is processed.
 
 ## Tech stack
 
 - **Runtime:** Google Apps Script
-- **AI:** OpenRouter API (model configurable, free models supported)
+- **AI:** OpenRouter API (configurable model, free models supported)
 - **Storage:** Google Drive + Google Docs
 - **Notifications:** Gmail
 
@@ -62,9 +86,13 @@ finalizePipeline() → creates Google Doc, sends email, cleans up
 2. Paste the contents of `tldr-processor.js`
 3. Save the project
 
-### 2. Add your OpenRouter API key
+### 2. Set the timezone
 
-In the Apps Script editor:
+**Project Settings → General → Timezone → Europe/Warsaw** (or your local zone).
+This affects when the daily trigger fires.
+
+### 3. Add your OpenRouter API key
+
 **Project Settings → Script Properties → Add property**
 
 | Property | Value |
@@ -73,61 +101,82 @@ In the Apps Script editor:
 
 Get a free API key at [openrouter.ai](https://openrouter.ai).
 
-### 3. Authorize and test
+### 4. Authorize and test infrastructure
 
-Run `testDriveOnly()` first to grant permissions and verify
-that Drive, Docs, and Gmail all work correctly.
+Run `testDriveOnly()` to grant permissions and verify that Drive, Docs,
+and Gmail all work correctly before touching the AI layer.
 
-Then run `testSingleArticle()` to verify the full pipeline
-including AI summarization.
+### 5. Test the full pipeline
 
-### 4. Activate the daily trigger
+Run `testSingleArticle()` to verify end-to-end flow including AI summarization.
+Results are written to `TLDR/_debug/` and a summary email is sent.
+
+### 6. Activate the daily trigger
 
 Run `setupDailyTrigger()` once. The pipeline will start automatically
-every weekday at 01:00 in your script's timezone.
+every active weekday at 00:00 in the project's configured timezone.
+
+Verify in the **Triggers** panel (clock icon) that exactly one
+`startPipeline` trigger exists.
 
 ## Configuration
 
-All settings are in the `CONFIG` object at the top of the script.
+All settings live in the `CONFIG` object at the top of the script.
 
 | Parameter | Default | Description |
 |---|---|---|
-| `OPENROUTER_MODEL` | `openrouter/owl-alpha` | LLM model identifier |
-| `LONG_READ_THRESHOLD_MINUTES` | `20` | Articles above this threshold get a preview instead of a full summary |
+| `OPENROUTER_MODEL` | `openrouter/owl-alpha` | Primary LLM model |
+| `OPENROUTER_MODEL_BACKUP` | `z-ai/glm-4.5-air:free` | Fallback model on final retry attempt |
+| `LONG_READ_THRESHOLD_MINUTES` | `20` | Articles above this get a teaser instead of a full summary |
 | `MAX_TEXT_LENGTH` | `40000` | Characters sent to the model per article |
-| `MAX_TOTAL_ARTICLES` | `70` | Hard cap on articles processed per day |
-| `MAX_CONSECUTIVE_ERRORS` | `5` | Consecutive API failures before early termination |
+| `MAX_TOTAL_ARTICLES` | `4` | Hard cap on articles processed per day |
+| `MAX_CONSECUTIVE_ERRORS` | `5` | Consecutive failures before early termination |
+| `MAX_AI_ATTEMPTS` | `3` | Retry attempts per article before giving up |
 | `STEP_TRIGGER_MINUTES` | `5` | Interval between article processing steps |
 | `DRIVE_ROOT_FOLDER` | `TLDR` | Root folder name in Google Drive |
+| `ACTIVE_DAYS` | `[2,3,4,5,6]` | Active days (0=Sun … 6=Sat) |
 
 ## Diagnostic functions
 
 | Function | Purpose |
 |---|---|
-| `setupDailyTrigger()` | Create or recreate the 01:00 daily trigger |
-| `testDriveOnly()` | Test Drive/Docs/Gmail without AI |
-| `testSingleArticle()` | Full end-to-end test on one article |
+| `setupDailyTrigger()` | Create or recreate the daily trigger at 00:00 |
+| `testDriveOnly()` | Test Drive / Docs / Gmail without AI (~30 s) |
+| `testSingleArticle()` | Full end-to-end test on one article per model (~2 min) |
 | `showArticles()` | List all articles found in yesterday's emails |
-| `showState()` | Show current pipeline progress |
-| `emergencyReset()` | Stop a running pipeline and clear all state |
+| `showState()` | Show current pipeline progress and pending retries |
+| `emergencyReset()` | Stop a stuck pipeline and clear all state |
 
 ## Output
 
-Each day's report is saved to: Google Drive
+### Email
 
-The notification email contains statistics (articles processed,
-summaries generated, unavailable) and a single button linking
-to the Google Doc.
+A styled HTML notification containing article and summary counts,
+a per-source breakdown, deduplication count, and a single button
+linking to the Google Doc.
+
+### Google Doc
+
+Saved to: `Google Drive / TLDR / YYYY / month / DD / TLDR Digest - DD.MM.YYYY`
+
+Each article entry contains:
+- Numbered title (color-coded by source)
+- Metadata line: reading time, source newsletter, and summary origin when applicable
+- AI-generated summary in Polish **or** a translated newsletter snippet
+  (labeled *"Strona niedostępna — poniższy opis pochodzi ze skrótu newslettera TLDR"*)
+  **or** an error message if neither was possible
+- Link to the original article
 
 ## Notes
 
-- Articles behind paywalls or requiring JavaScript are marked with
-  a warning and skipped gracefully
-- The AI prompt instructs the model to write in Polish
-- Summaries are plain prose — Markdown is stripped before writing to the Doc
+- Articles behind paywalls or requiring JavaScript are handled gracefully:
+  the newsletter's own description is translated and used as a fallback summary
+- All AI prompts instruct the model to write in Polish using plain prose
+- Markdown returned by the model is stripped before writing to the Doc
+- The backup model receives an increased `max_tokens` budget to account
+  for chain-of-thought reasoning overhead
 - Free OpenRouter models are sufficient for daily use
 
 ## License
 
 MIT
-
